@@ -52,7 +52,7 @@ Ayrılan personelin hesabını derhal kapatır, gruplardan temizler, açıklama 
 cd 01-Active-Directory
 .\Remove-ADUserOffboarding.ps1 -Username "ahmet.yilmaz"
 
-### 3. Sunucu Sağlık ve Durum Raporu (HTML)
+    3. Sunucu Sağlık ve Durum Raporu (HTML)
 Sunucunun disk doluluklarını (kalan %10 altı ise kırmızı uyarı), bellek kullanımını ve kritik Windows servislerini denetleyip modern bir web raporu üretir:
 
 ```powershell
