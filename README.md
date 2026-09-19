@@ -46,13 +46,13 @@ cd 01-Active-Directory
 *İşlem bitiminde oluşan `Onboarding_Results.csv` dosyasında üretilen geçici şifreler güvenli iletim için listelenir.*
 
 ### 2. Personel İşten Ayrılış (Offboarding)
-Ayrılan personelin hesabını derhal kapatır, gruplardan temizler, açıklama alanına zaman damgası düşer ve karantina OU'suna taşır. Karantina OU'su dizinde bulunmuyorsa otomatik olarak oluşturur:
+Ayrılan personelin hesabını derhal kapatır, gruplardan temizler, açıklama alanına zaman damgası düşer ve karantina OU'suna taşır. Karantina OU'su dizinde bulunmuyorsa otomatik olarak oluşturur :
 
 ```powershell
 cd 01-Active-Directory
 .\Remove-ADUserOffboarding.ps1 -Username "ahmet.yilmaz"
-
-    3. Sunucu Sağlık ve Durum Raporu (HTML)
+```
+### 3. Sunucu Sağlık ve Durum Raporu (HTML)
 Sunucunun disk doluluklarını (kalan %10 altı ise kırmızı uyarı), bellek kullanımını ve kritik Windows servislerini denetleyip modern bir web raporu üretir:
 
 ```powershell
