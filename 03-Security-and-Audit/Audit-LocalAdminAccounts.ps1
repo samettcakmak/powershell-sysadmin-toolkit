@@ -2,14 +2,11 @@
 .SYNOPSIS
     Yerel Yonetici (Local Admin) Guvenlik Denetim ve Temizleme (Remediation) Betigi.
 .DESCRIPTION
-    Bilgisayardaki 'Administrators' grubunu denetler, yetkisiz veya supheli hesaplari
-    tespit eder ve yoneticiye numaralandirilmis interaktif bir menu ile
-    bu hesaplari tek tek ya da topluca gruptan kaldirma imkani sunar.
-.EXAMPLE
-    .\Audit-LocalAdminAccounts.ps1
+    Otomatik UAC (Admin) yukseltme ozelligi ile acilir. Supheli hesaplari tespit edip
+    yoneticiye secim yaptirarak gruptan cikarma imkani sunar.
 .NOTES
     Yazar : Samet Cakmak
-    Surum : 2.0.0 (Interactive Remediation Edition)
+    Surum : 2.2.0 (Bugfix: Param at top & Self-Elevating)
 #>
 
 [CmdletBinding()]
@@ -18,10 +15,31 @@ param (
     [string[]]$AuthorizedAdmins = @("Administrator", "Domain Admins", "Enterprise Admins")
 )
 
+# =========================================================================
+# 1. OTOMATIK YONETICI (ADMIN) YETKISI KONTROLU & YUKSELTME (SELF-ELEVATION)
+# =========================================================================
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdmin) {
+    Write-Host "[!] Yonetici yetkileri gerekli. UAC izni talep ediliyor..." -ForegroundColor Cyan
+    try {
+        $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        Start-Process powershell.exe -ArgumentList $arguments -Verb RunAs
+        exit
+    } catch {
+        Write-Host "[!] UAC onayi reddedildi veya yetki yukseltme basarisiz oldu." -ForegroundColor Red
+        Read-Host "Cikmak icin Enter'a basin..."
+        exit
+    }
+}
+
+# =========================================================================
+# 2. ANA AUDIT & REMEDIATION PROGRAMI
+# =========================================================================
 Clear-Host
 Write-Host "==========================================================" -ForegroundColor Yellow
 Write-Host "  YEREL YONETICI (LOCAL ADMIN) DENETIM & TEMIZLEME ARACI " -ForegroundColor Yellow
-Write-Host "  Hazirlayan: Samet Cakmak | Surum 2.0" -ForegroundColor Yellow
+Write-Host "  Hazirlayan: Samet Cakmak | Surum 2.2" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Yellow
 
 $computerName = $env:COMPUTERNAME
@@ -31,6 +49,7 @@ $roleName = if ($isDC) { "Domain Controller (DC)" } else { "Istemci / Uye Sunucu
 
 Write-Host "[-] Hedef Cihaz : $computerName" -ForegroundColor Cyan
 Write-Host "[-] Cihaz Rolu  : $roleName" -ForegroundColor Cyan
+Write-Host "[-] Yetki Durumu: YONETICI (ELEVATED ADMIN) [OK]" -ForegroundColor Green
 
 # Yoneticileri Toplama
 $admins = @()
@@ -62,6 +81,7 @@ if (Get-Command Get-LocalGroupMember -ErrorAction SilentlyContinue -and -not $is
 
 if (-not $admins -or $admins.Count -eq 0) {
     Write-Host "[!] 'Administrators' grubu okunamadi veya grup bos." -ForegroundColor Red
+    Read-Host "`nCikmak icin Enter'a basin..."
     exit
 }
 
@@ -94,6 +114,7 @@ Write-Host "`n==========================================================" -Foreg
 if ($riskyAccounts.Count -eq 0) {
     Write-Host "  [OK] GUVENLI: Supheli veya yetkisiz yerel yonetici tespit edilmedi." -ForegroundColor Green
     Write-Host "==========================================================`n" -ForegroundColor Yellow
+    Read-Host "Cikmak icin Enter'a basin..."
     exit
 }
 
@@ -116,6 +137,7 @@ $secim = Read-Host "Lutfen yapmak istediginiz islemi secin"
 
 if ($secim -eq "0" -or [string]::IsNullOrWhiteSpace($secim)) {
     Write-Host "`n[-] Islem iptal edildi. Hicbir degisiklik yapilmadi.`n" -ForegroundColor Yellow
+    Read-Host "Cikmak icin Enter'a basin..."
     exit
 }
 
@@ -135,14 +157,12 @@ function Remove-AdminMember {
             Remove-LocalGroupMember -Group "Administrators" -Member $accName -ErrorAction Stop
             Write-Host "[+] BASARILI: '$accName' basariyla Administrators grubundan kaldirildi!" -ForegroundColor Green
         } else {
-            # Yedek yontem
             $cleanName = if ($accName -match '\\') { $accName.Split('\')[-1] } else { $accName }
             net localgroup Administrators "`"$cleanName`"" /delete
             Write-Host "[+] BASARILI: '$cleanName' net komutu ile gruptan kaldirildi!" -ForegroundColor Green
         }
     } catch {
         Write-Host "[!] HATA: '$accName' kaldirilamadi! Hata: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "[i] Ipucu: Bu islemi gerceklestirmek icin PowerShell'i 'Yonetici Olarak Calistir' ile acmalisiniz." -ForegroundColor Yellow
     }
 }
 
@@ -161,5 +181,6 @@ if ($secim -match '^[aA]$') {
     Write-Host "[!] Gecersiz girdi." -ForegroundColor Red
 }
 
-Write-Host "`n[+] Islem tamamlandi.`n" -ForegroundColor Cyan
+Write-Host "`n[+] Islem tamamlandi." -ForegroundColor Cyan
+Read-Host "Pencereyi kapatmak icin Enter tusuna basin..."
 
