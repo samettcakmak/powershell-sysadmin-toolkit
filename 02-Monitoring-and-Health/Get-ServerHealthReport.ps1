@@ -1,17 +1,17 @@
 <#
 .SYNOPSIS
-    Kurumsal Windows Sunucu Sağlık ve Durum Raporlayıcısı (HTML Raporu).
+    Kurumsal Windows Sunucu Saglik ve Durum Raporlayicisi (HTML Raporu).
 .DESCRIPTION
-    Sunucunun disk doluluk oranlarını (C, D, E sürücüleri), RAM kullanımını,
-    sistem çalışma süresini (Uptime) ve kritik Windows servislerini denetleyip
-    renk kodlu, responsive kurumsal bir HTML durum raporu üretir.
+    Sunucunun disk doluluk oranlarini (C, D, E suruculeri), RAM kullanimini,
+    sistem calisma suresini (Uptime) ve kritik Windows servislerini denetleyip
+    renk kodlu, responsive kurumsal bir HTML durum raporu uretir.
 .PARAMETER OutputHtmlPath
-    Oluşturulacak HTML raporunun kaydedileceği dosya yolu.
+    Olusturulacak HTML raporunun kaydedilecegi dosya yolu.
 .EXAMPLE
     .\Get-ServerHealthReport.ps1 -OutputHtmlPath ".\ServerHealthReport.html"
 .NOTES
-    Yazar : Samet Çakmak
-    Sürüm : 1.0.0
+    Yazar : Samet Cakmak
+    Surum : 1.1.0
 #>
 
 [CmdletBinding()]
@@ -21,15 +21,15 @@ param (
 )
 
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  WINDOWS SUNUCU SAĞLIK VE DURUM RAPORLAYICISI" -ForegroundColor Green
-Write-Host "  Hazırlayan: Samet Çakmak" -ForegroundColor Green
+Write-Host "  WINDOWS SUNUCU SAGLIK VE DURUM RAPORLAYICISI" -ForegroundColor Green
+Write-Host "  Hazirlayan: Samet Cakmak" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 
 $serverName = $env:COMPUTERNAME
 $reportTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 # 1. Disk Durumu Sorgusu
-Write-Host "[1/4] Disk sürücüleri analiz ediliyor..." -ForegroundColor Gray
+Write-Host "[1/4] Disk suruculeri analiz ediliyor..." -ForegroundColor Gray
 $disks = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
 
 $diskRows = ""
@@ -40,16 +40,15 @@ if ($disks) {
         $usedGB  = [math]::Round($totalGB - $freeGB, 1)
         $percentFree = [math]::Round(($freeGB / $totalGB) * 100, 1)
 
-        # Renk Kodu Mantığı: %10 altı Kırmızı, %20 altı Sarı, üzeri Yeşil
         if ($percentFree -lt 10) {
-            $badgeColor = "#EF4444" # Kırmızı (Kritik)
-            $badgeText  = "KRİTİK (%$percentFree Boş)"
+            $badgeColor = "#EF4444"
+            $badgeText  = "KRITIK (%$percentFree Bos)"
         } elseif ($percentFree -lt 20) {
-            $badgeColor = "#F59E0B" # Sarı (Uyarı)
-            $badgeText  = "DİKKAT (%$percentFree Boş)"
+            $badgeColor = "#F59E0B"
+            $badgeText  = "DIKKAT (%$percentFree Bos)"
         } else {
-            $badgeColor = "#10B981" # Yeşil (Sağlıklı)
-            $badgeText  = "SAĞLIKLI (%$percentFree Boş)"
+            $badgeColor = "#10B981"
+            $badgeText  = "SAGLIKLI (%$percentFree Bos)"
         }
 
         $diskRows += @"
@@ -63,23 +62,23 @@ if ($disks) {
 "@
     }
 } else {
-    $diskRows = "<tr><td colspan='5'>Disk bilgisi okunamadı.</td></tr>"
+    $diskRows = "<tr><td colspan='5'>Disk bilgisi okunamadi.</td></tr>"
 }
 
-# 2. RAM (Bellek) Kullanımı
-Write-Host "[2/4] Bellek (RAM) kullanımı hesaplanıyor..." -ForegroundColor Gray
+# 2. RAM (Bellek) Kullanimi
+Write-Host "[2/4] Bellek (RAM) kullanimi hesaplaniyor..." -ForegroundColor Gray
 $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
 $totalRAM = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
 $freeRAM  = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
 $usedRAM  = [math]::Round($totalRAM - $freeRAM, 1)
 $percentRAMUsed = [math]::Round(($usedRAM / $totalRAM) * 100, 1)
 
-# 3. Uptime (Çalışma Süresi)
-Write-Host "[3/4] Sistem çalışma süresi hesaplanıyor..." -ForegroundColor Gray
+# 3. Uptime (Calisma Suresi)
+Write-Host "[3/4] Sistem calisma suresi hesaplaniyor..." -ForegroundColor Gray
 $uptimeStr = "N/A"
 if ($os.LastBootUpTime) {
     $uptime = (Get-Date) - $os.LastBootUpTime
-    $uptimeStr = "$($uptime.Days) Gün, $($uptime.Hours) Saat, $($uptime.Minutes) Dakika"
+    $uptimeStr = "$($uptime.Days) Gun, $($uptime.Hours) Saat, $($uptime.Minutes) Dakika"
 }
 
 # 4. Kritik Windows Servisleri
@@ -92,12 +91,12 @@ foreach ($sName in $criticalServices) {
     if ($srv) {
         $status = $srv.Status
         $sColor = if ($status -eq "Running") { "#10B981" } else { "#EF4444" }
-        $sLabel = if ($status -eq "Running") { "ÇALIŞIYOR" } else { "DURMUŞ!" }
+        $sLabel = if ($status -eq "Running") { "CALISIYOR" } else { "DURMUS!" }
         $dispName = $srv.DisplayName
     } else {
         $status = "NotInstalled"
         $sColor = "#64748B"
-        $sLabel = "YÜKLÜ DEĞİL"
+        $sLabel = "YUKLU DEGIL"
         $dispName = $sName
     }
 
@@ -110,13 +109,13 @@ foreach ($sName in $criticalServices) {
 "@
 }
 
-# 5. Modern HTML Şablonu Oluşturma
+# 5. Modern HTML Sablonu Olusturma
 $htmlContent = @"
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Sunucu Sağlık Raporu - $serverName</title>
+    <title>Sunucu Saglik Raporu - $serverName</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #F8FAFC; color: #1E293B; margin: 0; padding: 25px; }
         .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07); border: 1px solid #E2E8F0; }
@@ -139,18 +138,18 @@ $htmlContent = @"
     <div class="container">
         <div class="header">
             <div>
-                <h1>🖥️ Sunucu Sağlık ve Durum Raporu</h1>
+                <h1>Sunucu Saglik ve Durum Raporu</h1>
                 <div style="font-size: 14px; color: #2563EB; font-weight: 600; margin-top: 5px;">Sunucu: $serverName</div>
             </div>
             <div class="meta">
                 <div><strong>Rapor Tarihi:</strong> $reportTime</div>
-                <div><strong>Hazırlayan:</strong> Samet Çakmak</div>
+                <div><strong>Hazirlayan:</strong> Samet Cakmak</div>
             </div>
         </div>
 
         <div class="metric-grid">
             <div class="metric-card">
-                <h3>RAM Kullanımı</h3>
+                <h3>RAM Kullanimi</h3>
                 <p>%$percentRAMUsed ($usedRAM / $totalRAM GB)</p>
             </div>
             <div class="metric-card">
@@ -158,19 +157,19 @@ $htmlContent = @"
                 <p style="font-size: 15px;">$uptimeStr</p>
             </div>
             <div class="metric-card">
-                <h3>Denetlenen Sürücü</h3>
+                <h3>Denetlenen Surucu</h3>
                 <p>$($disks.Count) Adet</p>
             </div>
         </div>
 
-        <h2>💾 Disk Sürücüleri ve Doluluk Oranları</h2>
+        <h2>Disk Suruculeri ve Doluluk Oranlari</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Sürücü</th>
+                    <th>Surucu</th>
                     <th>Toplam Boyut</th>
-                    <th>Kullanılan</th>
-                    <th>Boş Alan</th>
+                    <th>Kullanilan</th>
+                    <th>Bos Alan</th>
                     <th>Durum</th>
                 </tr>
             </thead>
@@ -179,12 +178,12 @@ $htmlContent = @"
             </tbody>
         </table>
 
-        <h2>⚙️ Kritik Windows Servisleri</h2>
+        <h2>Kritik Windows Servisleri</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Servis Adı</th>
-                    <th>Açıklama</th>
+                    <th>Servis Adi</th>
+                    <th>Aciklama</th>
                     <th>Durum</th>
                 </tr>
             </thead>
@@ -194,7 +193,7 @@ $htmlContent = @"
         </table>
 
         <div class="footer">
-            Bu rapor <strong>PowerShell Sysadmin Toolkit</strong> (Samet Çakmak) otomasyon aracı tarafından oluşturulmuştur.
+            Bu rapor <strong>PowerShell Sysadmin Toolkit</strong> (Samet Cakmak) otomasyon araci tarafindan olusturulmustur.
         </div>
     </div>
 </body>
@@ -202,5 +201,6 @@ $htmlContent = @"
 "@
 
 $htmlContent | Out-File -FilePath $OutputHtmlPath -Encoding UTF8
-Write-Host "`n[✓] Sağlık raporu başarıyla oluşturuldu: $OutputHtmlPath" -ForegroundColor Green
-Write-Host "    (Tarayıcınızda açıp doğrudan inceleyebilirsiniz.)`n" -ForegroundColor DarkGray
+Write-Host "`n[OK] Saglik raporu basariyla olusturuldu: $OutputHtmlPath" -ForegroundColor Green
+Write-Host "    (Tarayicinizda acip dogrudan inceleyebilirsiniz.)`n" -ForegroundColor DarkGray
+
