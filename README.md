@@ -12,7 +12,7 @@
 
 ## 📌 Proje Amacı
 
-Bir sistem yöneticisinin mesaisinin büyük bölümü kullanıcı açma/kapatma, sunucu donanım/servis sağlığını izleme ve yerel yönetici yetkilerini denetleme gibi manuel rutinlerle geçer.
+Bir sistem yöneticisinin mesaisinin büyük bölümü kullanıcı açma/kapatma, sunucu donanım ve servis sağlığını izleme ile yerel yönetici yetkilerini denetleme gibi manuel rutinlerle geçer.
 
 Bu toolkit; tüm bu operasyonel süreçleri **hata payını sıfıra indiren, güvenlik standartlarına uygun (Least Privilege / LAPS prensipleri), modern görsel panellere (Zero-Scroll SOC Dark Dashboard) sahip ve otomatik yetki yükseltmeli modüler PowerShell betikleri** ile tek merkezden otomatize etmek amacıyla geliştirilmiştir.
 
@@ -125,6 +125,38 @@ cd 03-Security-and-Audit
 Lutfen yapmak istediginiz islemi secin: 1
 [?] 'CLIENT01\Client01' hesabini Administrators grubundan cikarmak istediginize emin misiniz? (E/H): E
 [+] BASARILI: 'CLIENT01\Client01' basariyla Administrators grubundan kaldirildi!
+```
+
+---
+
+## ❓ Sık Karşılaşılan Sorunlar ve Çözümleri (Troubleshooting)
+
+### ⚠️ "Running scripts is disabled on this system" veya Sağ Tıkta Pencerenin Anında Kapanması
+
+**Belirti:**
+Bir `.ps1` betiğini çalıştırmak istediğinizde veya sağ tıklayıp **"Run with PowerShell"** dediğinizde konsolda şu hatayı alabilirsiniz ya da pencere saliseler içinde açılıp kapanabilir:
+```text
+File ... cannot be loaded because running scripts is disabled on this system.
++ CategoryInfo          : SecurityError: (:) [], ParentContainsErrorRecordException
++ FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+**Nedeni:**
+Windows istemcilerinde (Windows 10/11) PowerShell'in varsayılan güvenlik politikası (`ExecutionPolicy`), zararlı yazılımların arka planda izinsiz kod çalıştırmasını engellemek için **`Restricted`** (kısıtlı) olarak gelir.
+
+**Çözüm 1: Kalıcı Sistem İzni (Tavsiye Edilen)**
+Sisteminizde PowerShell betiklerini ve sağ tık menüsünü sorunsuz kullanabilmek için bir defaya mahsus şu adımı uygulayın:
+1. Başlat menüsüne **PowerShell** yazın ve **"Yönetici olarak çalıştır"** (Run as Administrator) seçeneğiyle açın.
+2. Aşağıdaki komutu yapıştırıp **Enter**'a basın:
+   ```powershell
+   Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
+   ```
+*(Bu ayar, yerel olarak kendi yazdığınız betiklerin engelsiz çalışmasını sağlarken internetten indirilen güvenilmeyen betikleri korumaya devam eder.)*
+
+**Çözüm 2: Tek Seferlik Geçici Çalıştırma (Bypass)**
+Sistem genelindeki politikayı değiştirmeden sadece ilgili betiği tek seferlik çalıştırmak için:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\BetikAdi.ps1
 ```
 
 ---
