@@ -12,7 +12,7 @@
     .\Get-ServerHealthReport.ps1 -OutputHtmlPath ".\ServerHealthReport.html"
 .NOTES
     Yazar : Samet Cakmak
-    Surum : 3.1.0 (Zero-Scroll SOC Edition)
+    Surum : 3.1.0
 #>
 
 [CmdletBinding()]
@@ -796,6 +796,6 @@ $htmlContent = @"
 "@;
 
 $htmlContent | Out-File -FilePath $OutputHtmlPath -Encoding UTF8;
-Write-Host "`n[OK] V3.1 Zero-Scroll Dashboard basariyla olusturuldu: $OutputHtmlPath" -ForegroundColor Green;
+Write-Host "`n[OK] V3.1 Dashboard basariyla olusturuldu: $OutputHtmlPath" -ForegroundColor Green;
 Write-Host "     (Tarayicinizda acip scroolsun temiz gorunumu inceleyebilirsiniz.)`n" -ForegroundColor DarkGray;
 
