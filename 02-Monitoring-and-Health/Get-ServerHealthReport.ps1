@@ -1,17 +1,18 @@
 <#
 .SYNOPSIS
-    Kurumsal Windows Sunucu Saglik ve Durum Paneli (Gelisitirilmis HTML Dashboard).
+    Kurumsal Windows Sunucu Saglik Paneli (Sifir Scroll, Responsive & Gizlilik Korumali).
 .DESCRIPTION
-    Sunucunun CPU, RAM, Disk doluluklarini (gorsel ilerleme cubuklariyla), sistem
-    calisma suresini (Uptime), aktif ag kartlarini, en cok bellek tuketen ilk 5 sureci
-    ve kritik servisleri denetleyip modern, responsive kurumsal bir HTML dashboard uretir.
+    Sunucunun CPU, RAM, Disk doluluklarini havali gorsel gostergelerle (radial conic gauges),
+    sistem calisma suresini (Uptime), ag kartlarini, en cok kaynak tuketen surecleri
+    ve kritik servisleri tek ekranda kaydirma cubugu olmadan toplayan kurumsal HTML dashboard.
+    LinkedIn / GitHub ekran goruntuleri icin tek tikla IP ve sunucu adini gizleme (privacy mode) icerir.
 .PARAMETER OutputHtmlPath
-    Olusturulacak HTML raporunun kaydedilecegi dosya yolu.
+    Olusturulacak HTML dashboard dosyasinin yolu.
 .EXAMPLE
     .\Get-ServerHealthReport.ps1 -OutputHtmlPath ".\ServerHealthReport.html"
 .NOTES
     Yazar : Samet Cakmak
-    Surum : 2.0.0 (Enterprise Dashboard Edition)
+    Surum : 3.1.0 (Zero-Scroll SOC Edition)
 #>
 
 [CmdletBinding()]
@@ -21,7 +22,7 @@ param (
 )
 
 Write-Host "==========================================================" -ForegroundColor Cyan;
-Write-Host "  WINDOWS SUNUCU SAGLIK VE PERFORMANS DASHBOARD V2.0" -ForegroundColor Cyan;
+Write-Host "  WINDOWS SUNUCU SAGLIK DASHBOARD V3.1 (ZERO-SCROLL)" -ForegroundColor Cyan;
 Write-Host "  Hazirlayan: Samet Cakmak" -ForegroundColor Cyan;
 Write-Host "==========================================================" -ForegroundColor Cyan;
 
@@ -31,52 +32,59 @@ $overallStatus = "HEALTHY";
 $overallStatusText = "SISTEM SAGLIKLI";
 $overallStatusColor = "#10B981";
 
-# 1. Isletim Sistemi ve Donanim Bilgileri
-Write-Host "[1/6] Isletim sistemi ve donanim tahlili yapiliyor..." -ForegroundColor Gray;
+# 1. Isletim Sistemi ve Uptime
+Write-Host "[1/6] Sistem mimarisi ve calisma suresi aliniyor..." -ForegroundColor Gray;
 $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue;
 $osName = if ($os.Caption) { $os.Caption.Trim() } else { "Windows Server" };
 $osArch = if ($os.OSArchitecture) { $os.OSArchitecture } else { "64-bit" };
-$osVersion = if ($os.Version) { $os.Version } else { "N/A" };
 
 $uptimeStr = "N/A";
 $lastBootStr = "N/A";
 if ($os.LastBootUpTime) {
     $uptime = (Get-Date) - $os.LastBootUpTime;
-    $uptimeStr = "$($uptime.Days) Gun, $($uptime.Hours) Saat, $($uptime.Minutes) Dakika";
+    $uptimeStr = "$($uptime.Days)g $($uptime.Hours)s $($uptime.Minutes)d";
     $lastBootStr = $os.LastBootUpTime.ToString("yyyy-MM-dd HH:mm");
 }
 
 # 2. CPU / Islemci Bilgisi ve Yuk
-Write-Host "[2/6] Islemci (CPU) durumu denetleniyor..." -ForegroundColor Gray;
+Write-Host "[2/6] Islemci yuku ve cekirdek bilgisi okunuyor..." -ForegroundColor Gray;
 $cpu = Get-CimInstance -ClassName Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1;
-$cpuName = if ($cpu.Name) { $cpu.Name.Trim() } else { "Intel / AMD Processor" };
+$cpuName = if ($cpu.Name) { $cpu.Name.Trim() } else { "Intel/AMD Processor" };
 $cpuCores = if ($cpu.NumberOfCores) { $cpu.NumberOfCores } else { 2 };
 $cpuThreads = if ($cpu.NumberOfLogicalProcessors) { $cpu.NumberOfLogicalProcessors } else { 4 };
 $cpuLoad = if ($null -ne $cpu.LoadPercentage) { $cpu.LoadPercentage } else { 0 };
 
+$cpuGaugeColor = if ($cpuLoad -gt 85) { "#EF4444" } elseif ($cpuLoad -gt 65) { "#F59E0B" } else { "#3B82F6" };
+
 # 3. RAM (Bellek) Durumu
-Write-Host "[3/6] Bellek (RAM) havuzu hesaplaniyor..." -ForegroundColor Gray;
+Write-Host "[3/6] RAM havuzu tahlil ediliyor..." -ForegroundColor Gray;
 $totalRAM = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1);
 $freeRAM  = [math]::Round($os.FreePhysicalMemory / 1MB, 1);
 $usedRAM  = [math]::Round($totalRAM - $freeRAM, 1);
 $percentRAMUsed = [math]::Round(($usedRAM / $totalRAM) * 100, 1);
 
+$ramGaugeColor = "#10B981";
 if ($percentRAMUsed -gt 90) {
+    $ramGaugeColor = "#EF4444";
     $overallStatus = "CRITICAL";
-    $overallStatusText = "KRITIK BELLEK YUKU";
+    $overallStatusText = "KRITIK BELLEK";
     $overallStatusColor = "#EF4444";
-} elseif ($percentRAMUsed -gt 80 -and $overallStatus -ne "CRITICAL") {
-    $overallStatus = "WARNING";
-    $overallStatusText = "YUKSEK BELLEK KULLANIMI";
-    $overallStatusColor = "#F59E0B";
+} elseif ($percentRAMUsed -gt 80) {
+    $ramGaugeColor = "#F59E0B";
+    if ($overallStatus -ne "CRITICAL") {
+        $overallStatus = "WARNING";
+        $overallStatusText = "YUKSEK BELLEK";
+        $overallStatusColor = "#F59E0B";
+    }
 }
 
-# 4. Disk Suruculeri ve Gorsel Ilerleme Cubuklari
-Write-Host "[4/6] Disk depolama alanlari taraniyor..." -ForegroundColor Gray;
-$disks = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue;
+# 4. Disk Depolama Alanlari
+Write-Host "[4/6] Disk suruculeri analiz ediliyor..." -ForegroundColor Gray;
+$disks = @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue);
+$diskCount = $disks.Count;
 
 $diskCards = "";
-if ($disks) {
+if ($disks -and $diskCount -gt 0) {
     foreach ($d in $disks) {
         $totalGB = [math]::Round($d.Size / 1GB, 1);
         $freeGB  = [math]::Round($d.FreeSpace / 1GB, 1);
@@ -86,13 +94,13 @@ if ($disks) {
 
         if ($percentFree -lt 10) {
             $dColor = "#EF4444";
-            $dStatus = "KRITIK DOLULUK";
+            $dStatus = "KRITIK";
             $overallStatus = "CRITICAL";
             $overallStatusText = "KRITIK DISK ALANI";
             $overallStatusColor = "#EF4444";
         } elseif ($percentFree -lt 20) {
             $dColor = "#F59E0B";
-            $dStatus = "UYARI";
+            $dStatus = "AZALIYOR";
             if ($overallStatus -ne "CRITICAL") {
                 $overallStatus = "WARNING";
                 $overallStatusText = "AZALAN DISK ALANI";
@@ -104,51 +112,50 @@ if ($disks) {
         }
 
         $diskCards += @"
-        <div class="disk-box">
-            <div class="disk-header">
-                <div class="disk-name">Surucu $($d.DeviceID)</div>
-                <div class="disk-badge" style="background: $dColor;">$dStatus</div>
+        <div class="disk-card">
+            <div class="disk-top">
+                <div class="disk-letter">Surucu $($d.DeviceID)</div>
+                <div class="badge" style="background: $dColor;">$dStatus</div>
             </div>
-            <div class="disk-meta">
-                <span>Kullanilan: <strong>$usedGB GB</strong></span>
+            <div class="progress-container">
+                <div class="progress-fill" style="width: $percentUsed%; background: $dColor;"></div>
+            </div>
+            <div class="disk-bottom">
+                <span>Kullanilan: <strong>$usedGB GB</strong> (%$percentUsed)</span>
                 <span>Bos: <strong>$freeGB GB</strong> / $totalGB GB</span>
             </div>
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" style="width: $percentUsed%; background: $dColor;"></div>
-            </div>
-            <div class="disk-footer">Doluluk Orani: %$percentUsed (Kalan: %$percentFree)</div>
         </div>
 "@;
     }
 } else {
-    $diskCards = "<p>Disk bilgisi alinamadi.</p>";
+    $diskCards = "<div class='no-data'>Disk bilgisi alinamadi.</div>";
 }
 
-# 5. En Cok Bellek Tuketen Ilk 5 Surec (Top 5 Processes)
-Write-Host "[5/6] En cok kaynak tuketen ilk 5 surec listeleniyor..." -ForegroundColor Gray;
+# 5. En Cok Bellek Tuketen Ilk 5 Surec
+Write-Host "[5/6] En cok kaynak tuketen surecler siralaniyor..." -ForegroundColor Gray;
 $topProcesses = Get-Process -ErrorAction SilentlyContinue | 
     Sort-Object WorkingSet64 -Descending | 
     Select-Object -First 5;
 
 $procRows = "";
-$rank = 1;
+$pIdx = 1;
 foreach ($p in $topProcesses) {
     $pMemMB = [math]::Round($p.WorkingSet64 / 1MB, 1);
     $procRows += @"
     <tr>
-        <td><strong>#$rank</strong></td>
-        <td><code>$($p.ProcessName)</code></td>
-        <td>$($p.Id)</td>
-        <td><strong>$pMemMB MB</strong></td>
+        <td class="proc-rank">#$pIdx</td>
+        <td class="proc-name"><code>$($p.ProcessName)</code></td>
+        <td class="proc-pid">$($p.Id)</td>
+        <td class="proc-ram"><strong>$pMemMB MB</strong></td>
     </tr>
 "@;
-    $rank++;
+    $pIdx++;
 }
 
 # 6. Kritik Windows Servisleri
-Write-Host "[6/6] Kritik Windows servisleri denetleniyor..." -ForegroundColor Gray;
+Write-Host "[6/6] Kritik servisler taraniyor..." -ForegroundColor Gray;
 $criticalServices = @("LanmanServer", "LanmanWorkstation", "Spooler", "W32Time", "WinRM", "Dhcp", "Dnscache");
-$srvGrid = "";
+$srvRows = "";
 
 foreach ($sName in $criticalServices) {
     $srv = Get-Service -Name $sName -ErrorAction SilentlyContinue;
@@ -157,11 +164,11 @@ foreach ($sName in $criticalServices) {
         if ($status -eq "Running") {
             $sColor = "#10B981";
             $sBadge = "CALISIYOR";
-            $sDot = "background: #10B981;";
+            $sPulse = "background: #10B981;";
         } else {
             $sColor = "#EF4444";
             $sBadge = "DURMUS!";
-            $sDot = "background: #EF4444;";
+            $sPulse = "background: #EF4444;";
             if ($overallStatus -ne "CRITICAL") {
                 $overallStatus = "WARNING";
                 $overallStatusText = "DURAN KRITIK SERVIS";
@@ -172,33 +179,33 @@ foreach ($sName in $criticalServices) {
     } else {
         $sColor = "#64748B";
         $sBadge = "YUKLU DEGIL";
-        $sDot = "background: #94A3B8;";
-        $dispName = "Servis mevcut degil";
+        $sPulse = "background: #64748B;";
+        $dispName = "Servis kurulu degil";
     }
 
-    $srvGrid += @"
-    <div class="srv-item">
-        <div class="srv-left">
-            <span class="srv-indicator" style="$sDot"></span>
-            <div>
-                <div class="srv-name">$sName</div>
-                <div class="srv-desc">$dispName</div>
+    $srvRows += @"
+    <div class="srv-row">
+        <div class="srv-info">
+            <span class="pulse-dot" style="$sPulse"></span>
+            <div class="srv-text-group">
+                <span class="srv-title">$sName</span>
+                <span class="srv-sub">$dispName</span>
             </div>
         </div>
-        <div class="srv-badge" style="color: $sColor; border: 1px solid $sColor;">$sBadge</div>
+        <div class="srv-status-chip" style="color: $sColor; border: 1px solid $sColor;">$sBadge</div>
     </div>
 "@;
 }
 
 # 7. Aktif Ag Karti ve IP Yapilandirmasi
 $nic = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled = True" -ErrorAction SilentlyContinue | Select-Object -First 1;
-$ipAddr = if ($nic.IPAddress) { $nic.IPAddress[0] } else { "N/A" };
-$subnet = if ($nic.IPSubnet) { $nic.IPSubnet[0] } else { "N/A" };
+$ipAddr  = if ($nic.IPAddress) { $nic.IPAddress[0] } else { "N/A" };
+$subnet  = if ($nic.IPSubnet) { $nic.IPSubnet[0] } else { "N/A" };
 $gateway = if ($nic.DefaultIPGateway) { $nic.DefaultIPGateway[0] } else { "N/A" };
 $macAddr = if ($nic.MACAddress) { $nic.MACAddress } else { "N/A" };
-$nicDesc = if ($nic.Description) { $nic.Description } else { "Ethernet Adapter" };
+$nicDesc = if ($nic.Description) { $nic.Description } else { "Ethernet Bagdastiricisi" };
 
-# 8. Modern Responsive HTML Dashboard Tasarimi
+# 8. Modern Single-Screen SOC Dashboard HTML Sablonu
 $htmlContent = @"
 <!DOCTYPE html>
 <html lang="tr">
@@ -208,402 +215,587 @@ $htmlContent = @"
     <title>Server Health Dashboard - $serverName</title>
     <style>
         :root {
-            --bg: #F8FAFC;
-            --surface: #FFFFFF;
-            --border: #E2E8F0;
-            --text-main: #0F172A;
-            --text-muted: #64748B;
-            --primary: #2563EB;
-            --primary-soft: #EFF6FF;
+            --bg-base: #0B0F19;
+            --surface: #111827;
+            --surface-hover: #1F2937;
+            --border: rgba(255, 255, 255, 0.08);
+            --text-white: #F8FAFC;
+            --text-dim: #94A3B8;
+            --primary: #3B82F6;
             --success: #10B981;
             --warning: #F59E0B;
             --danger: #EF4444;
         }
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text-main);
-            margin: 0;
-            padding: 24px 16px;
-        }
-        .dashboard-container {
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-        .header-bar {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.04);
-            margin-bottom: 20px;
-        }
-        .header-left h1 {
-            margin: 0;
-            font-size: 22px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .header-left .server-meta {
-            margin-top: 6px;
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-        .header-right {
-            text-align: right;
+            background-color: var(--bg-base);
+            color: var(--text-white);
+            padding: 14px 18px;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
-            gap: 6px;
+            justify-content: space-between;
         }
-        .health-badge {
-            display: inline-block;
-            padding: 6px 14px;
-            border-radius: 30px;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            color: white;
-            text-transform: uppercase;
+        .container {
+            max-width: 1380px;
+            margin: 0 auto;
+            width: 100%;
         }
-        .author-tag {
-            font-size: 12px;
-            color: var(--primary);
-            font-weight: 600;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
+        /* Top Navigation & Status Bar */
+        .top-bar {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 10px;
-            padding: 16px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        }
-        .stat-card .label {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-        }
-        .stat-card .value {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 4px;
-        }
-        .stat-card .subtext {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-        .main-layout {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        .section-panel {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            margin-bottom: 20px;
-        }
-        .section-title {
-            margin: 0 0 16px 0;
-            font-size: 16px;
-            font-weight: 700;
-            color: var(--text-main);
+            padding: 10px 18px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 10px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
-        .disk-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 14px;
-        }
-        .disk-box {
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px;
-        }
-        .disk-header {
+        .title-group {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
+            gap: 12px;
         }
-        .disk-name {
+        .pulse-live {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: $overallStatusColor;
+            box-shadow: 0 0 10px $overallStatusColor;
+            animation: pulse-live 1.8s infinite;
+        }
+        @keyframes pulse-live {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .title-text h1 {
             font-size: 15px;
             font-weight: 700;
+            letter-spacing: 0.5px;
+            color: var(--text-white);
         }
-        .disk-badge {
-            font-size: 10px;
-            font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 12px;
-            color: white;
+        .title-text .sub {
+            font-size: 10.5px;
+            color: var(--text-dim);
+            margin-top: 2px;
         }
-        .disk-meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-        .progress-bar-bg {
-            background: #E2E8F0;
-            height: 10px;
-            border-radius: 5px;
-            overflow: hidden;
-            margin-bottom: 6px;
-        }
-        .progress-bar-fill {
-            height: 100%;
-            border-radius: 5px;
-            transition: width 0.4s ease;
-        }
-        .disk-footer {
-            font-size: 11px;
-            color: var(--text-muted);
-            text-align: right;
-        }
-        .srv-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 8px;
-        }
-        .srv-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 12px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-        }
-        .srv-left {
+        .actions-group {
             display: flex;
             align-items: center;
             gap: 10px;
         }
-        .srv-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-        .srv-name {
-            font-size: 13px;
-            font-weight: 700;
-        }
-        .srv-desc {
+        .privacy-btn {
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            color: #60A5FA;
             font-size: 11px;
-            color: var(--text-muted);
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
-        .srv-badge {
+        .privacy-btn:hover {
+            background: rgba(59, 130, 246, 0.3);
+            border-color: #60A5FA;
+        }
+        .privacy-btn.active {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #EF4444;
+            color: #FCA5A5;
+        }
+        .badge-status {
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 10.5px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: white;
+            text-transform: uppercase;
+        }
+
+        /* 4 Top KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .kpi-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .kpi-info .kpi-label {
             font-size: 10px;
             font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 4px;
-            background: white;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
         }
-        table.proc-table {
+        .kpi-info .kpi-val {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--text-white);
+        }
+        .kpi-info .kpi-sub {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+        .gauge-conic {
+            width: 52px; height: 52px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .gauge-inner {
+            width: 40px; height: 40px; border-radius: 50%;
+            background: var(--surface);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 800;
+            color: var(--text-white);
+        }
+
+        /* 3-Column Core Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px;
+            margin-bottom: 8px;
+        }
+        .panel-title {
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--text-white);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .panel-sub {
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        /* Storage Bars */
+        .disk-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+        }
+        .disk-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11.5px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .progress-container {
+            background: rgba(255, 255, 255, 0.08);
+            height: 6px;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 4px;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.4s ease;
+        }
+        .disk-bottom {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+        .badge {
+            font-size: 8.5px;
+            padding: 2px 6px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 700;
+        }
+
+        /* Network Info List */
+        .net-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
+            font-size: 11px;
+            margin-top: 2px;
         }
-        table.proc-table th, table.proc-table td {
-            padding: 8px 10px;
+        .net-table td {
+            padding: 4px 2px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .net-table .label-col {
+            color: var(--text-dim);
+            width: 38%;
+        }
+        .net-table .val-col {
+            font-weight: 600;
+            color: var(--text-white);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* ZERO-SCROLL Compact Services List */
+        .srv-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            overflow: visible;
+        }
+        .srv-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+        }
+        .srv-info {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+        }
+        .pulse-dot {
+            width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+        }
+        .srv-text-group {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .srv-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-white);
+        }
+        .srv-sub {
+            font-size: 9px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 150px;
+        }
+        .srv-status-chip {
+            font-size: 8.5px;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 3px;
+            flex-shrink: 0;
+            margin-left: 6px;
+        }
+
+        /* Processes Table */
+        table.proc-tbl {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        table.proc-tbl th, table.proc-tbl td {
+            padding: 5px 6px;
             text-align: left;
             border-bottom: 1px solid var(--border);
         }
-        table.proc-table th {
-            background: var(--bg);
-            font-size: 11px;
-            color: var(--text-muted);
+        table.proc-tbl th {
+            font-size: 9px;
             text-transform: uppercase;
+            color: var(--text-dim);
+            font-weight: 700;
         }
-        .net-info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            font-size: 13px;
+        .proc-rank { color: var(--primary); font-weight: 800; width: 20px; }
+        .proc-name code { background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 3px; color: #93C5FD; font-size: 10.5px; }
+        .proc-pid { color: var(--text-dim); font-size: 10px; }
+        .proc-ram { color: #34D399; font-weight: 700; text-align: right; }
+
+        /* Privacy Masking Styles */
+        .maskable {
+            transition: filter 0.2s ease, opacity 0.2s ease;
+            display: inline-block;
         }
-        .net-item {
-            background: var(--bg);
-            padding: 10px 12px;
-            border-radius: 6px;
-            border: 1px solid var(--border);
+        .is-blurred {
+            filter: blur(5px) !important;
+            user-select: none !important;
+            opacity: 0.4 !important;
         }
-        .net-item span {
-            display: block;
+        .eye-toggle-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
             font-size: 11px;
-            color: var(--text-muted);
-            margin-bottom: 2px;
+            padding: 0 4px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
         }
-        .footer-bar {
+        .eye-toggle-btn:hover {
+            opacity: 1;
+            color: var(--primary);
+        }
+
+        /* Footer */
+        .bottom-bar {
             text-align: center;
-            font-size: 12px;
-            color: var(--text-muted);
-            padding: 20px 0;
+            font-size: 10.5px;
+            color: var(--text-dim);
+            margin-top: 10px;
+            padding-top: 6px;
             border-top: 1px solid var(--border);
-            margin-top: 20px;
         }
-        @media (max-width: 860px) {
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .main-layout { grid-template-columns: 1fr; }
+
+        @media (max-width: 1024px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .main-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <!-- Header -->
-        <div class="header-bar">
-            <div class="header-left">
-                <h1>Windows Sunucu Durum Paneli</h1>
-                <div class="server-meta">
-                    <strong>Sunucu:</strong> $serverName &nbsp;|&nbsp; 
-                    <strong>OS:</strong> $osName ($osArch) &nbsp;|&nbsp; 
-                    <strong>Rapor Tarihi:</strong> $reportTime
+    <div class="container">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="title-group">
+                <span class="pulse-live"></span>
+                <div class="title-text">
+                    <h1>Sistem Durum Paneli <span class="maskable" id="field-srvname" style="color: #60A5FA;">[$serverName]</span></h1>
+                    <div class="sub">$osName ($osArch) &bull; Rapor: $reportTime</div>
                 </div>
             </div>
-            <div class="header-right">
-                <span class="health-badge" style="background: $overallStatusColor;">$overallStatusText</span>
-                <span class="author-tag">Hazirlayan: Samet Cakmak</span>
+            <div class="actions-group">
+                <button class="privacy-btn" id="masterPrivacyBtn" onclick="toggleMasterPrivacy()">
+                    &#128274; Gizlilik Modu (Screenshot)
+                </button>
+                <div class="badge-status" style="background: $overallStatusColor;">$overallStatusText</div>
             </div>
         </div>
 
-        <!-- 4 Top KPI Metric Cards -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="label">CPU Yuku</div>
-                <div class="value">%$cpuLoad</div>
-                <div class="subtext">$cpuCores C / $cpuThreads T ($cpuName)</div>
+        <!-- 4 KPI Cards with Gauges -->
+        <div class="kpi-grid">
+            <!-- CPU Card -->
+            <div class="kpi-card">
+                <div class="kpi-info">
+                    <div class="kpi-label">CPU Yuku</div>
+                    <div class="kpi-val">%$cpuLoad</div>
+                    <div class="kpi-sub">$cpuCores Cekirdek / $cpuThreads Izlek</div>
+                </div>
+                <div class="gauge-conic" style="background: conic-gradient($cpuGaugeColor calc($cpuLoad * 1%), rgba(255,255,255,0.06) 0);">
+                    <div class="gauge-inner">%$cpuLoad</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="label">RAM Kullanimi</div>
-                <div class="value">%$percentRAMUsed</div>
-                <div class="subtext">$usedRAM GB kullanildi / $totalRAM GB toplam</div>
+
+            <!-- RAM Card -->
+            <div class="kpi-card">
+                <div class="kpi-info">
+                    <div class="kpi-label">RAM Kullanimi</div>
+                    <div class="kpi-val">%$percentRAMUsed</div>
+                    <div class="kpi-sub">$usedRAM GB / $totalRAM GB</div>
+                </div>
+                <div class="gauge-conic" style="background: conic-gradient($ramGaugeColor calc($percentRAMUsed * 1%), rgba(255,255,255,0.06) 0);">
+                    <div class="gauge-inner">%$percentRAMUsed</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="label">Sistem Uptime</div>
-                <div class="value" style="font-size: 16px; margin-top: 4px;">$uptimeStr</div>
-                <div class="subtext">Son acilis: $lastBootStr</div>
+
+            <!-- Uptime Card -->
+            <div class="kpi-card">
+                <div class="kpi-info">
+                    <div class="kpi-label">Sistem Uptime</div>
+                    <div class="kpi-val" style="font-size: 16px; margin-top: 2px;">$uptimeStr</div>
+                    <div class="kpi-sub">Acilis: $lastBootStr</div>
+                </div>
+                <div class="gauge-conic" style="background: conic-gradient(#10B981 100%, rgba(255,255,255,0.06) 0);">
+                    <div class="gauge-inner" style="font-size: 15px; color: #10B981; font-weight: 800;">UP</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="label">Ag Baglantisi</div>
-                <div class="value" style="font-size: 16px; margin-top: 4px;">$ipAddr</div>
-                <div class="subtext">Ag Gecidi: $gateway</div>
+
+            <!-- Network Primary Card -->
+            <div class="kpi-card">
+                <div class="kpi-info">
+                    <div class="kpi-label">Birincil IPv4</div>
+                    <div class="kpi-val" style="font-size: 15px; margin-top: 2px;">
+                        <span class="maskable" id="field-kpi-ip">$ipAddr</span>
+                        <button class="eye-toggle-btn" onclick="toggleSingle('field-kpi-ip', this)" title="Gizle/Goster">&#128065;</button>
+                    </div>
+                    <div class="kpi-sub">
+                        Gecit: <span class="maskable" id="field-kpi-gw">$gateway</span>
+                    </div>
+                </div>
+                <div class="gauge-conic" style="background: conic-gradient(#3B82F6 100%, rgba(255,255,255,0.06) 0);">
+                    <div class="gauge-inner" style="font-size: 16px;">&#127760;</div>
+                </div>
             </div>
         </div>
 
-        <!-- Main Layout (Disks & Network left, Services & Processes right) -->
-        <div class="main-layout">
-            <!-- Left Column -->
-            <div>
-                <!-- Storage Section -->
-                <div class="section-panel">
-                    <div class="section-title">
-                        <span>Disk Depolama Durumu</span>
-                        <small style="font-size: 12px; color: var(--text-muted); font-weight: normal;">$($disks.Count) Surucu</small>
-                    </div>
-                    <div class="disk-grid">
-                        $diskCards
-                    </div>
+        <!-- 3-Column Main Grid -->
+        <div class="main-grid">
+            <!-- Col 1: Storage & Network -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">&#128190; Disk Depolama ($diskCount Surucu)</span>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    $diskCards
                 </div>
 
-                <!-- Network Details -->
-                <div class="section-panel">
-                    <div class="section-title">
-                        <span>Ag Yapilandirmasi & IP Bilgileri</span>
-                        <small style="font-size: 12px; color: var(--text-muted); font-weight: normal;">$nicDesc</small>
-                    </div>
-                    <div class="net-info-grid">
-                        <div class="net-item">
-                            <span>IPv4 Adresi</span>
-                            <strong>$ipAddr</strong>
-                        </div>
-                        <div class="net-item">
-                            <span>Alt Ag Maskesi (Subnet)</span>
-                            <strong>$subnet</strong>
-                        </div>
-                        <div class="net-item">
-                            <span>Varsayilan Ag Gecidi (Gateway)</span>
-                            <strong>$gateway</strong>
-                        </div>
-                        <div class="net-item">
-                            <span>Fiziksel Adres (MAC)</span>
-                            <strong>$macAddr</strong>
-                        </div>
-                    </div>
+                <div class="panel-header" style="margin-top: 2px;">
+                    <span class="panel-title">&#127760; Ag Yapilandirmasi</span>
+                    <button class="eye-toggle-btn" onclick="toggleNetFields()" title="Ag Bilgilerini Gizle">&#128274;</button>
+                </div>
+                <table class="net-table">
+                    <tr>
+                        <td class="label-col">IPv4 Adresi:</td>
+                        <td class="val-col">
+                            <span class="maskable" id="net-ip">$ipAddr</span>
+                            <button class="eye-toggle-btn" onclick="toggleSingle('net-ip', this)">&#128065;</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Alt Ag Maskesi:</td>
+                        <td class="val-col">
+                            <span class="maskable" id="net-sub">$subnet</span>
+                            <button class="eye-toggle-btn" onclick="toggleSingle('net-sub', this)">&#128065;</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Ag Gecidi (Gateway):</td>
+                        <td class="val-col">
+                            <span class="maskable" id="net-gw">$gateway</span>
+                            <button class="eye-toggle-btn" onclick="toggleSingle('net-gw', this)">&#128065;</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label-col">Fiziksel MAC:</td>
+                        <td class="val-col">
+                            <span class="maskable" id="net-mac">$macAddr</span>
+                            <button class="eye-toggle-btn" onclick="toggleSingle('net-mac', this)">&#128065;</button>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Col 2: Services (ZERO-SCROLL FIXED) -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">&#9881; Kritik Servisler ($($criticalServices.Count))</span>
+                    <span class="panel-sub">Gercek Zamanli Durum</span>
+                </div>
+                <div class="srv-list">
+                    $srvRows
                 </div>
             </div>
 
-            <!-- Right Column -->
-            <div>
-                <!-- Critical Services -->
-                <div class="section-panel">
-                    <div class="section-title">
-                        <span>Kritik Servisler</span>
-                        <small style="font-size: 12px; color: var(--text-muted); font-weight: normal;">$($criticalServices.Count) Servis</small>
-                    </div>
-                    <div class="srv-grid">
-                        $srvGrid
-                    </div>
+            <!-- Col 3: Processes -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">&#128293; En Cok Bellek Tuketen Ilk 5</span>
+                    <span class="panel-sub">RAM Siralamasi</span>
                 </div>
-
-                <!-- Top 5 Processes -->
-                <div class="section-panel">
-                    <div class="section-title">
-                        <span>En Cok Bellek Tuketimi (Top 5)</span>
-                    </div>
-                    <table class="proc-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Surec</th>
-                                <th>PID</th>
-                                <th>RAM</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            $procRows
-                        </tbody>
-                    </table>
-                </div>
+                <table class="proc-tbl">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Surec Adi</th>
+                            <th>PID</th>
+                            <th style="text-align: right;">RAM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        $procRows
+                    </tbody>
+                </table>
             </div>
         </div>
 
         <!-- Footer -->
-        <div class="footer-bar">
-            <strong>PowerShell Sysadmin Toolkit v2.0</strong> &nbsp;|&nbsp; 
-            Gelistirici: <strong>Samet Cakmak</strong> &nbsp;|&nbsp; 
-            Otomasyon Raporu
+        <div class="bottom-bar">
+            PowerShell Sysadmin Toolkit v3.1 &nbsp;&bull;&nbsp; 
+            Hazirlayan: <strong>Samet Cakmak</strong> &nbsp;&bull;&nbsp; 
+            Sifir Kaydirma & Ekran Goruntusu Modu Destekli
         </div>
     </div>
+
+    <!-- Client-side Privacy & Masking Script -->
+    <script>
+        let isMasterMasked = false;
+
+        function toggleMasterPrivacy() {
+            isMasterMasked = !isMasterMasked;
+            const btn = document.getElementById('masterPrivacyBtn');
+            const sensitiveEls = document.querySelectorAll('.maskable');
+            
+            sensitiveEls.forEach(el => {
+                if (isMasterMasked) {
+                    el.classList.add('is-blurred');
+                } else {
+                    el.classList.remove('is-blurred');
+                }
+            });
+
+            if (isMasterMasked) {
+                btn.innerHTML = '&#128275; Tumunu Goster';
+                btn.classList.add('active');
+            } else {
+                btn.innerHTML = '&#128274; Gizlilik Modu (Screenshot)';
+                btn.classList.remove('active');
+            }
+        }
+
+        function toggleSingle(id, btn) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.toggle('is-blurred');
+                btn.innerHTML = el.classList.contains('is-blurred') ? '&#128274;' : '&#128065;';
+            }
+        }
+
+        function toggleNetFields() {
+            ['net-ip', 'net-sub', 'net-gw', 'net-mac'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('is-blurred');
+            });
+        }
+    </script>
 </body>
 </html>
 "@;
 
 $htmlContent | Out-File -FilePath $OutputHtmlPath -Encoding UTF8;
-Write-Host "`n[OK] Gelismis dashboard basariyla olusturuldu: $OutputHtmlPath" -ForegroundColor Green;
-Write-Host "     (Tarayicinizda acip modern paneli inceleyebilirsiniz.)`n" -ForegroundColor DarkGray;
+Write-Host "`n[OK] V3.1 Zero-Scroll Dashboard basariyla olusturuldu: $OutputHtmlPath" -ForegroundColor Green;
+Write-Host "     (Tarayicinizda acip scroolsun temiz gorunumu inceleyebilirsiniz.)`n" -ForegroundColor DarkGray;
 
